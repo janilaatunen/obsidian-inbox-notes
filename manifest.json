@@ -1,0 +1,10 @@
+{
+  "id": "inbox-notes",
+  "name": "Inbox Notes",
+  "version": "1.0.0",
+  "minAppVersion": "1.11.0",
+  "description": "Device-specific inbox notes that open on startup",
+  "author": "Jani Laatunen",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}
