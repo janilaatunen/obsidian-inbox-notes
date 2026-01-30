@@ -188,9 +188,8 @@ export default class InboxNotesPlugin extends Plugin {
 			return;
 		}
 
-		// Open the file
-		const leaf = this.app.workspace.getLeaf();
-		await leaf.openFile(file);
+		// Open the file in Obsidian
+		await this.app.workspace.openLinkText(device.inboxPath, '', false);
 	}
 
 	/**
