@@ -157,14 +157,20 @@ export default class InboxNotesPlugin extends Plugin {
 			return;
 		}
 
+		// Ensure path has .md extension
+		let inboxPath = device.inboxPath;
+		if (!inboxPath.endsWith('.md')) {
+			inboxPath = inboxPath + '.md';
+		}
+
 		// Check if file exists
-		let file = this.app.vault.getAbstractFileByPath(device.inboxPath);
+		let file = this.app.vault.getAbstractFileByPath(inboxPath);
 
 		if (!file) {
 			// File doesn't exist, create it
 			try {
 				// Ensure parent folder exists
-				const folderPath = device.inboxPath.substring(0, device.inboxPath.lastIndexOf('/'));
+				const folderPath = inboxPath.substring(0, inboxPath.lastIndexOf('/'));
 				if (folderPath && folderPath.length > 0) {
 					const folder = this.app.vault.getAbstractFileByPath(folderPath);
 					if (!folder) {
@@ -174,22 +180,23 @@ export default class InboxNotesPlugin extends Plugin {
 
 				// Create the inbox file with a basic header
 				const initialContent = `# Inbox\n\n`;
-				file = await this.app.vault.create(device.inboxPath, initialContent);
-				new Notice(`Created inbox note: ${device.inboxPath}`);
+				file = await this.app.vault.create(inboxPath, initialContent);
+				new Notice(`Created inbox note: ${inboxPath}`);
 			} catch (error) {
 				console.error('Error creating inbox note:', error);
-				new Notice(`Failed to create inbox note: ${device.inboxPath}`);
+				new Notice(`Failed to create inbox note: ${inboxPath}`);
 				return;
 			}
 		}
 
 		if (!(file instanceof TFile)) {
-			new Notice(`Inbox path is not a file: ${device.inboxPath}`);
+			new Notice(`Inbox path is not a file: ${inboxPath}`);
 			return;
 		}
 
 		// Open the file in Obsidian
-		await this.app.workspace.openLinkText(device.inboxPath, '', false);
+		const leaf = this.app.workspace.getLeaf(false);
+		await leaf.openFile(file);
 	}
 
 	/**
