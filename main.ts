@@ -178,9 +178,8 @@ export default class InboxNotesPlugin extends Plugin {
 					}
 				}
 
-				// Create the inbox file with a basic header
-				const initialContent = `# Inbox\n\n`;
-				file = await this.app.vault.create(inboxPath, initialContent);
+				// Create the inbox file (empty)
+				file = await this.app.vault.create(inboxPath, '');
 				new Notice(`Created inbox note: ${inboxPath}`);
 			} catch (error) {
 				console.error('Error creating inbox note:', error);
