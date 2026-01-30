@@ -59,6 +59,11 @@ export default class InboxNotesPlugin extends Plugin {
 		// Add settings tab
 		this.addSettingTab(new InboxNotesSettingTab(this.app, this));
 
+		// Add ribbon icon
+		this.addRibbonIcon('inbox', 'Open inbox note', () => {
+			this.openInboxNote();
+		});
+
 		// Open inbox on startup
 		this.app.workspace.onLayoutReady(() => {
 			if (this.settings.openOnStartup && !this.settings.hasOpenedOnce) {
@@ -153,11 +158,29 @@ export default class InboxNotesPlugin extends Plugin {
 		}
 
 		// Check if file exists
-		const file = this.app.vault.getAbstractFileByPath(device.inboxPath);
+		let file = this.app.vault.getAbstractFileByPath(device.inboxPath);
 
 		if (!file) {
-			new Notice(`Inbox note not found: ${device.inboxPath}`);
-			return;
+			// File doesn't exist, create it
+			try {
+				// Ensure parent folder exists
+				const folderPath = device.inboxPath.substring(0, device.inboxPath.lastIndexOf('/'));
+				if (folderPath && folderPath.length > 0) {
+					const folder = this.app.vault.getAbstractFileByPath(folderPath);
+					if (!folder) {
+						await this.app.vault.createFolder(folderPath);
+					}
+				}
+
+				// Create the inbox file with a basic header
+				const initialContent = `# Inbox\n\n`;
+				file = await this.app.vault.create(device.inboxPath, initialContent);
+				new Notice(`Created inbox note: ${device.inboxPath}`);
+			} catch (error) {
+				console.error('Error creating inbox note:', error);
+				new Notice(`Failed to create inbox note: ${device.inboxPath}`);
+				return;
+			}
 		}
 
 		if (!(file instanceof TFile)) {
@@ -249,7 +272,7 @@ class InboxNotesSettingTab extends PluginSettingTab {
 			// Inbox path
 			new Setting(containerEl)
 				.setName('Inbox note path')
-				.setDesc('Path to the inbox note for this device (e.g., "Inbox.md" or "Daily/Inbox.md")')
+				.setDesc('Path to the inbox note for this device (e.g., "Inbox.md" or "Daily/Inbox.md"). File will be created if it doesn\'t exist.')
 				.addText(text => {
 					text
 						.setPlaceholder('Inbox.md')
@@ -260,24 +283,6 @@ class InboxNotesSettingTab extends PluginSettingTab {
 						});
 					text.inputEl.style.width = '100%';
 				});
-
-			// Quick action: set current file as inbox
-			new Setting(containerEl)
-				.setName('Quick set')
-				.setDesc('Set the currently active file as inbox for this device')
-				.addButton(button => button
-					.setButtonText('Use active file')
-					.onClick(async () => {
-						const activeFile = this.app.workspace.getActiveFile();
-						if (activeFile) {
-							currentDevice.inboxPath = activeFile.path;
-							await this.plugin.saveSettings();
-							new Notice(`Set "${activeFile.path}" as inbox`);
-							this.display(); // Refresh UI
-						} else {
-							new Notice('No active file');
-						}
-					}));
 		}
 
 		// All devices section
