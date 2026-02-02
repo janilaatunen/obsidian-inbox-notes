@@ -54,9 +54,7 @@ When you use Obsidian on multiple devices with the same vault (via sync), each d
 ## Future Ideas
 
 - Quick capture functionality to append to inbox from anywhere
-- Template support for new inbox entries
 - Keyboard shortcuts for opening inbox
-- Integration with daily notes
 
 ## Disclaimer
 
