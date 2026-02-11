@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Platform } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, Notice, TFile, Platform, setIcon } from 'obsidian';
 
 interface DeviceConfig {
 	id: string;
@@ -90,7 +90,7 @@ export default class InboxNotesPlugin extends Plugin {
 	 * Generate a unique device ID
 	 */
 	generateDeviceId(): string {
-		return 'device-' + Math.random().toString(36).substr(2, 9) + '-' + Date.now().toString(36);
+		return 'device-' + Math.random().toString(36).substring(2, 11) + '-' + Date.now().toString(36);
 	}
 
 	/**
@@ -108,24 +108,38 @@ export default class InboxNotesPlugin extends Plugin {
 	}
 
 	/**
+	 * Get device ID from localStorage (device-specific, not synced)
+	 */
+	getDeviceId(): string {
+		const storageKey = 'inbox-notes-device-id';
+		let deviceId = localStorage.getItem(storageKey);
+
+		if (!deviceId) {
+			deviceId = this.generateDeviceId();
+			localStorage.setItem(storageKey, deviceId);
+			console.log('Generated new device ID:', deviceId);
+		}
+
+		return deviceId;
+	}
+
+	/**
 	 * Ensure current device is configured
 	 */
 	async ensureDeviceConfigured() {
-		// If no device ID, generate one
-		if (!this.settings.currentDeviceId) {
-			this.settings.currentDeviceId = this.generateDeviceId();
-			await this.saveSettings();
-		}
+		// Get device ID from localStorage (not synced)
+		const deviceId = this.getDeviceId();
+		this.settings.currentDeviceId = deviceId;
 
 		// Check if this device exists in devices array
-		const deviceExists = this.settings.devices.some(d => d.id === this.settings.currentDeviceId);
+		const deviceExists = this.settings.devices.some(d => d.id === deviceId);
 
 		if (!deviceExists) {
 			// Add new device configuration
 			const newDevice: DeviceConfig = {
-				id: this.settings.currentDeviceId,
+				id: deviceId,
 				name: this.getDefaultDeviceName(),
-				inboxPath: ''
+				inboxPath: 'Inbox'
 			};
 			this.settings.devices.push(newDevice);
 			await this.saveSettings();
@@ -170,8 +184,9 @@ export default class InboxNotesPlugin extends Plugin {
 			// File doesn't exist, create it
 			try {
 				// Ensure parent folder exists
-				const folderPath = inboxPath.substring(0, inboxPath.lastIndexOf('/'));
-				if (folderPath && folderPath.length > 0) {
+				const lastSlashIndex = inboxPath.lastIndexOf('/');
+				if (lastSlashIndex > 0) {
+					const folderPath = inboxPath.substring(0, lastSlashIndex);
 					const folder = this.app.vault.getAbstractFileByPath(folderPath);
 					if (!folder) {
 						await this.app.vault.createFolder(folderPath);
@@ -240,7 +255,9 @@ class InboxNotesSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h1', { text: 'Inbox Notes Settings' });
 
-		// Open on startup setting
+		// Startup Settings section
+		containerEl.createEl('h2', { text: 'Startup Settings' });
+
 		new Setting(containerEl)
 			.setName('Open inbox on startup')
 			.setDesc('Automatically open the inbox note when Obsidian starts')
@@ -251,112 +268,134 @@ class InboxNotesSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		containerEl.createEl('h2', { text: 'Current Device' });
+		// Devices section
+		containerEl.createEl('h2', { text: 'Devices' });
 
-		const currentDevice = this.plugin.getCurrentDevice();
-		if (currentDevice) {
-			// Device info
-			const infoEl = containerEl.createDiv({ cls: 'inbox-notes-device-info' });
-			infoEl.createEl('p', {
-				text: `Device ID: ${currentDevice.id}`,
-				cls: 'inbox-notes-device-id'
+		this.plugin.settings.devices.forEach((device, index) => {
+			const isCurrentDevice = device.id === this.plugin.settings.currentDeviceId;
+
+			// Device card container
+			const deviceCard = containerEl.createDiv({
+				cls: isCurrentDevice ? 'inbox-notes-device-card current' : 'inbox-notes-device-card'
 			});
 
-			// Device name
-			new Setting(containerEl)
+			// Device ID heading with tag and delete button
+			const headerContainer = deviceCard.createDiv({ cls: 'inbox-notes-device-header' });
+
+			const headingGroup = headerContainer.createDiv({ cls: 'inbox-notes-heading-group' });
+			const heading = headingGroup.createEl('h3', { text: device.id });
+			if (isCurrentDevice) {
+				headingGroup.createEl('span', {
+					text: 'THIS DEVICE',
+					cls: 'inbox-notes-current-tag'
+				});
+			}
+
+			// Delete icon (only for non-current devices)
+			if (!isCurrentDevice) {
+				const deleteIcon = headerContainer.createDiv({ cls: 'inbox-notes-delete-icon' });
+				deleteIcon.setAttribute('aria-label', 'Delete device');
+				deleteIcon.addEventListener('click', async () => {
+					this.plugin.settings.devices.splice(index, 1);
+					await this.plugin.saveSettings();
+					new Notice(`Deleted device: ${device.name}`);
+					this.display();
+				});
+				// Set trash icon using Obsidian's setIcon
+				setIcon(deleteIcon, 'trash-2');
+			}
+
+			// Device Name setting
+			new Setting(deviceCard)
 				.setName('Device name')
-				.setDesc('A friendly name to identify this device')
+				.setDesc('Friendly name for this device')
 				.addText(text => text
 					.setPlaceholder('My Device')
-					.setValue(currentDevice.name)
+					.setValue(device.name)
 					.onChange(async (value) => {
-						currentDevice.name = value || this.plugin.getDefaultDeviceName();
+						device.name = value || this.plugin.getDefaultDeviceName();
 						await this.plugin.saveSettings();
 					}));
 
-			// Inbox path
-			new Setting(containerEl)
+			// Inbox Path setting
+			new Setting(deviceCard)
 				.setName('Inbox note path')
-				.setDesc('Path to the inbox note for this device (e.g., "Inbox.md" or "Daily/Inbox.md"). File will be created if it doesn\'t exist.')
+				.setDesc('Path to the inbox note (e.g., "Inbox.md" or "Daily/Inbox.md")')
 				.addText(text => {
 					text
 						.setPlaceholder('Inbox.md')
-						.setValue(currentDevice.inboxPath)
+						.setValue(device.inboxPath)
 						.onChange(async (value) => {
-							currentDevice.inboxPath = value;
+							device.inboxPath = value || 'Inbox';
 							await this.plugin.saveSettings();
 						});
 					text.inputEl.style.width = '100%';
 				});
-		}
-
-		// All devices section
-		if (this.plugin.settings.devices.length > 1) {
-			containerEl.createEl('h2', { text: 'All Devices' });
-			containerEl.createEl('p', {
-				text: 'Manage inbox notes for all your devices. The highlighted device is the current one.',
-				cls: 'setting-item-description'
-			});
-
-			this.plugin.settings.devices.forEach((device, index) => {
-				const isCurrentDevice = device.id === this.plugin.settings.currentDeviceId;
-				const deviceContainer = containerEl.createDiv({
-					cls: isCurrentDevice ? 'inbox-notes-device current-device' : 'inbox-notes-device'
-				});
-
-				const header = deviceContainer.createDiv({ cls: 'inbox-notes-device-header' });
-				header.createEl('strong', {
-					text: device.name + (isCurrentDevice ? ' (Current)' : '')
-				});
-
-				const pathText = device.inboxPath || 'Not configured';
-				deviceContainer.createEl('p', {
-					text: `Inbox: ${pathText}`,
-					cls: 'inbox-notes-device-path'
-				});
-
-				// Delete button (only for non-current devices)
-				if (!isCurrentDevice) {
-					new Setting(deviceContainer)
-						.addButton(button => button
-							.setButtonText('Delete device')
-							.setWarning()
-							.onClick(async () => {
-								this.plugin.settings.devices.splice(index, 1);
-								await this.plugin.saveSettings();
-								new Notice(`Deleted device: ${device.name}`);
-								this.display();
-							}));
-				}
-			});
-		}
+		});
 
 		// Add styles
 		const style = containerEl.createEl('style');
 		style.textContent = `
-			.inbox-notes-device {
+			.inbox-notes-device-card {
 				padding: 1em;
 				margin: 1em 0;
 				border: 1px solid var(--background-modifier-border);
-				border-radius: 5px;
+				border-radius: 6px;
+				background: var(--background-primary);
+				position: relative;
 			}
-			.inbox-notes-device.current-device {
-				background: var(--background-secondary);
+			.inbox-notes-device-card.current {
 				border-color: var(--interactive-accent);
+				border-width: 2px;
 			}
 			.inbox-notes-device-header {
-				margin-bottom: 0.5em;
+				display: flex;
+				align-items: flex-start;
+				justify-content: space-between;
+				margin-bottom: 1em;
 			}
-			.inbox-notes-device-path {
+			.inbox-notes-heading-group {
+				display: flex;
+				align-items: center;
+				gap: 0.75em;
+				flex: 1;
+			}
+			.inbox-notes-device-header h3 {
+				margin: 0;
 				font-family: var(--font-monospace);
 				font-size: 0.9em;
 				color: var(--text-muted);
-				margin: 0.5em 0;
+				font-weight: 500;
 			}
-			.inbox-notes-device-id {
-				font-family: var(--font-monospace);
-				font-size: 0.85em;
+			.inbox-notes-current-tag {
+				display: inline-block;
+				padding: 0.25em 0.6em;
+				background: var(--interactive-accent);
+				color: var(--text-on-accent);
+				border-radius: 3px;
+				font-size: 0.7em;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				white-space: nowrap;
+			}
+			.inbox-notes-delete-icon {
+				cursor: pointer;
+				padding: 0.25em;
+				border-radius: 4px;
 				color: var(--text-muted);
+				transition: all 0.15s ease;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+			.inbox-notes-delete-icon:hover {
+				background: var(--background-modifier-error-hover);
+				color: var(--text-error);
+			}
+			.inbox-notes-delete-icon svg {
+				width: 18px;
+				height: 18px;
 			}
 		`;
 	}

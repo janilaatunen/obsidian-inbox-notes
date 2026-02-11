@@ -1,6 +1,6 @@
 {
   "name": "obsidian-inbox-notes",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Device-specific inbox notes that open on startup",
   "main": "main.js",
   "scripts": {
