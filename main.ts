@@ -4,6 +4,8 @@ interface DeviceConfig {
 	id: string;
 	name: string;
 	inboxPath: string;
+	platform?: string; // Track platform for recovery
+	lastSeen?: number; // Timestamp for recovery purposes
 }
 
 interface InboxNotesSettings {
@@ -108,19 +110,67 @@ export default class InboxNotesPlugin extends Plugin {
 	}
 
 	/**
+	 * Get current platform identifier for recovery
+	 */
+	getCurrentPlatform(): string {
+		if (Platform.isAndroidApp) return 'android';
+		if (Platform.isIosApp) return 'ios';
+		return 'desktop';
+	}
+
+	/**
 	 * Get device ID from localStorage (device-specific, not synced)
+	 * With automatic recovery for mobile devices
 	 */
 	getDeviceId(): string {
 		const storageKey = 'inbox-notes-device-id';
 		let deviceId = localStorage.getItem(storageKey);
 
 		if (!deviceId) {
-			deviceId = this.generateDeviceId();
-			localStorage.setItem(storageKey, deviceId);
-			console.log('Generated new device ID:', deviceId);
+			// Try to recover device ID for mobile devices
+			const recoveredId = this.tryRecoverDeviceId();
+			if (recoveredId) {
+				deviceId = recoveredId;
+				localStorage.setItem(storageKey, deviceId);
+				console.log('Recovered device ID:', deviceId);
+			} else {
+				deviceId = this.generateDeviceId();
+				localStorage.setItem(storageKey, deviceId);
+				console.log('Generated new device ID:', deviceId);
+			}
 		}
 
 		return deviceId;
+	}
+
+	/**
+	 * Try to recover device ID for mobile devices after localStorage is cleared
+	 * Only works for Android and iOS devices
+	 */
+	tryRecoverDeviceId(): string | null {
+		// Only recover for mobile devices
+		if (!Platform.isMobile) {
+			return null;
+		}
+
+		const currentPlatform = this.getCurrentPlatform();
+		if (currentPlatform !== 'android' && currentPlatform !== 'ios') {
+			return null;
+		}
+
+		// Find all devices matching current platform
+		const matchingDevices = this.settings.devices.filter(d => d.platform === currentPlatform);
+
+		if (matchingDevices.length === 0) {
+			return null;
+		}
+
+		// If multiple devices, use the most recently seen one
+		matchingDevices.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+		const deviceToRecover = matchingDevices[0];
+
+		console.log(`Auto-recovering ${currentPlatform} device:`, deviceToRecover.name);
+		return deviceToRecover.id;
 	}
 
 	/**
@@ -132,19 +182,25 @@ export default class InboxNotesPlugin extends Plugin {
 		this.settings.currentDeviceId = deviceId;
 
 		// Check if this device exists in devices array
-		const deviceExists = this.settings.devices.some(d => d.id === deviceId);
+		let device = this.settings.devices.find(d => d.id === deviceId);
 
-		if (!deviceExists) {
+		if (!device) {
 			// Add new device configuration
-			const newDevice: DeviceConfig = {
+			device = {
 				id: deviceId,
 				name: this.getDefaultDeviceName(),
-				inboxPath: 'Inbox'
+				inboxPath: 'Inbox',
+				platform: this.getCurrentPlatform(),
+				lastSeen: Date.now()
 			};
-			this.settings.devices.push(newDevice);
+			this.settings.devices.push(device);
 			await this.saveSettings();
 
-			console.log('Configured new device:', newDevice);
+			console.log('Configured new device:', device);
+		} else {
+			// Update lastSeen timestamp for existing device
+			device.lastSeen = Date.now();
+			await this.saveSettings();
 		}
 	}
 
@@ -290,6 +346,13 @@ class InboxNotesSettingTab extends PluginSettingTab {
 					cls: 'inbox-notes-current-tag'
 				});
 			}
+			// Show platform badge for mobile devices
+			if (device.platform === 'android' || device.platform === 'ios') {
+				const platformBadge = headingGroup.createEl('span', {
+					text: device.platform.toUpperCase(),
+					cls: 'inbox-notes-platform-badge'
+				});
+			}
 
 			// Delete icon (only for non-current devices)
 			if (!isCurrentDevice) {
@@ -372,6 +435,18 @@ class InboxNotesSettingTab extends PluginSettingTab {
 				padding: 0.25em 0.6em;
 				background: var(--interactive-accent);
 				color: var(--text-on-accent);
+				border-radius: 3px;
+				font-size: 0.7em;
+				font-weight: 600;
+				text-transform: uppercase;
+				letter-spacing: 0.5px;
+				white-space: nowrap;
+			}
+			.inbox-notes-platform-badge {
+				display: inline-block;
+				padding: 0.25em 0.6em;
+				background: var(--background-modifier-border);
+				color: var(--text-muted);
 				border-radius: 3px;
 				font-size: 0.7em;
 				font-weight: 600;
