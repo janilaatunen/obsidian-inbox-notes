@@ -4,7 +4,7 @@ import builtins from "builtin-modules";
 import { copyFileSync } from "fs";
 import { homedir } from "os";
 
-const vault = `${homedir()}/Obsidian/Codex/.obsidian/plugins/obsidian-inbox-notes`;
+const vault = `${homedir()}/Obsidian/Codex/.obsidian/plugins/inbox-notes`;
 
 const deployPlugin = {
 	name: "vault-deploy",
